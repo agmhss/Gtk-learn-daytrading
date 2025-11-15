@@ -6,16 +6,16 @@
 <title>Advanced Day-Trading Simulator</title>
 
 <style>
-body { font-family: Arial; background:#eef2f7; padding:20px; }
+body { font-family: Arial; background:#eef2f7; padding:20px; margin:0; }
 h1 { text-align:center; }
 
 .dashboard {
-  display:flex; justify-content:space-around;
+  display:flex; justify-content:space-around; flex-wrap:wrap;
   padding:15px; background:white;
   border-radius:10px; margin-bottom:20px;
   box-shadow:0 2px 5px rgba(0,0,0,0.1);
 }
-.metric { font-size:1.1em; font-weight:bold; }
+.metric { font-size:1.2em; font-weight:bold; margin:6px; }
 
 .stock-container {
   display:grid;
@@ -28,10 +28,20 @@ h1 { text-align:center; }
 }
 canvas { width:100%; height:120px; }
 
+.controls {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:8px;
+}
 .controls button {
-  padding:6px 10px; margin:3px;
-  border:none; border-radius:6px;
-  cursor:pointer; color:white;
+  flex:1;
+  padding:6px 10px;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  color:white;
+  font-size:0.9em;
 }
 .buy { background:#4caf50; }
 .sell { background:#f44336; }
@@ -40,12 +50,12 @@ canvas { width:100%; height:120px; }
 .hold { background:#777; }
 
 #tradeTable {
-  background:white; margin-top:25px; width:100%; border-radius:10px;
-  box-shadow:0 2px 6px rgba(0,0,0,0.15);
-  border-collapse:collapse;
+  width:100%; border-collapse:collapse; margin-top:25px;
+  background:white; border-radius:10px;
+  overflow:hidden; box-shadow:0 2px 6px rgba(0,0,0,0.15);
 }
 #tradeTable th, #tradeTable td {
-  padding:10px; border-bottom:1px solid #ddd; text-align:center;
+  padding:10px; text-align:center; border-bottom:1px solid #ddd;
 }
 #tradeTable th { background:#3f51b5; color:white; }
 .green { color:#4caf50; font-weight:bold; }
@@ -55,8 +65,9 @@ canvas { width:100%; height:120px; }
 
 <body>
 
-<h1>📊 Advanced Day-Trading Simulator</h1>
+<h1>📈 Advanced Day-Trading Simulator</h1>
 
+<!-- Dashboard -->
 <div class="dashboard">
   <div class="metric">💰 Funds: ₹<span id="funds">10000</span></div>
   <div class="metric">📦 Net Holdings: ₹<span id="holdings">0</span></div>
@@ -64,8 +75,10 @@ canvas { width:100%; height:120px; }
   <div class="metric">📊 P/L: <span id="pl">0</span></div>
 </div>
 
+<!-- Stocks area -->
 <div class="stock-container" id="stocks"></div>
 
+<!-- Dashboard Table -->
 <h2>📘 Trade Dashboard</h2>
 <table id="tradeTable">
   <thead>
@@ -82,12 +95,12 @@ canvas { width:100%; height:120px; }
 </table>
 
 <script>
-/* ----------------------------  STOCKS -------------------------- */
+/* ------------------ STOCKS ------------------- */
 const stocks = ['X','Y','Z'];
 let funds = 10000;
 
-const portfolio = {};
 const stockData = {};
+const portfolio = {};
 
 stocks.forEach(s => {
   stockData[s] = Array.from({length:60},()=>100+Math.random()*20);
@@ -95,54 +108,68 @@ stocks.forEach(s => {
     longQty: 0,
     longAvg: 0,
     shortQty: 0,
-    shortAvg: 0
+    shortAvg: 0,
+    longSL: null,
+    shortSL: null
   };
 });
 
-/* ----------------------------  PRICE SIM -------------------------- */
-function simulatePrice(oldPrice) {
+/* ----------- PRICE SIMULATION + CHART ----------- */
+function simulatePrice(oldPrice){
   return Math.max(50, oldPrice + (Math.random()-0.5)*2);
 }
 
 function drawChart(ctx, values){
-  const w = ctx.canvas.width;
-  const h = ctx.canvas.height;
+  const w = ctx.canvas.width, h = ctx.canvas.height;
   ctx.clearRect(0,0,w,h);
-  const max=Math.max(...values), min=Math.min(...values);
-  ctx.beginPath();
-  ctx.strokeStyle="#2962ff";
+  const max = Math.max(...values), min = Math.min(...values);
+
+  ctx.beginPath(); ctx.strokeStyle="#2962ff";
   values.forEach((v,i)=>{
     const x=(i/values.length)*w;
     const y=h - ((v-min)/(max-min))*h;
-    if(i===0) ctx.moveTo(x,y);
-    else ctx.lineTo(x,y);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   });
   ctx.stroke();
 }
 
-/* ----------------------------  RENDER -------------------------- */
-function render() {
+function render(){
   const container = document.getElementById("stocks");
+
   stocks.forEach(symbol=>{
     const div=document.createElement("div");
     div.className="stock-card";
     div.id="card-"+symbol;
+
     div.innerHTML=`
       <h3>Stock ${symbol}</h3>
       <canvas id="chart-${symbol}" width="260" height="120"></canvas>
+
       <div class="controls">
         <button class="buy" onclick="buyLong('${symbol}')">Buy</button>
         <button class="sell" onclick="sellLong('${symbol}')">Sell</button>
         <button class="short" onclick="shortSell('${symbol}')">Short Sell</button>
         <button class="cover" onclick="coverShort('${symbol}')">Cover</button>
       </div>
+
+      <div class="controls">
+        <button class="hold" onclick="setLongSL('${symbol}')">Set Long SL</button>
+        <button class="hold" onclick="setShortSL('${symbol}')">Set Short SL</button>
+      </div>
     `;
+
     container.appendChild(div);
   });
 }
 render();
 
-/* ----------------------------  TRADING LOGIC -------------------------- */
+/* ------------------ GET PRICE ------------------ */
+function latestPrice(symbol){
+  const arr = stockData[symbol];
+  return arr[arr.length-1];
+}
+
+/* ------------------ LONG TRADING ------------------ */
 function buyLong(symbol){
   const price = latestPrice(symbol);
   if(funds >= price){
@@ -160,41 +187,81 @@ function sellLong(symbol){
     funds += price * p.longQty;
     p.longQty = 0;
     p.longAvg = 0;
+    p.longSL = null;
   }
 }
 
-/* SHORT SELL */
+/* ------------------ SHORT TRADING ------------------ */
 function shortSell(symbol){
   const price = latestPrice(symbol);
-  // Short 1 share
   let p = portfolio[symbol];
   p.shortAvg = (p.shortAvg*p.shortQty + price) / (p.shortQty+1);
   p.shortQty++;
-  // Selling without owning → receive cash
   funds += price;
 }
 
-/* BUY TO COVER */
 function coverShort(symbol){
   let p = portfolio[symbol];
   if(p.shortQty > 0){
     const price = latestPrice(symbol);
-    // Need to pay to return borrowed shares
     funds -= price * p.shortQty;
     p.shortQty = 0;
     p.shortAvg = 0;
+    p.shortSL = null;
   }
 }
 
-/* ----------------------------  CALCULATIONS -------------------------- */
-function latestPrice(symbol){
-  const arr = stockData[symbol];
-  return arr[arr.length-1];
+/* ------------------ STOP LOSS ------------------ */
+function setLongSL(symbol){
+  const price = latestPrice(symbol);
+  const inp = prompt(`Set LONG Stop-Loss for ${symbol} (Current ₹${price.toFixed(2)})`);
+  const sl = parseFloat(inp);
+  if(!isNaN(sl)){
+    portfolio[symbol].longSL = sl;
+    alert(`Long SL set at ₹${sl}`);
+  }
 }
 
-function updateDashboard(){
+function setShortSL(symbol){
+  const price = latestPrice(symbol);
+  const inp = prompt(`Set SHORT Stop-Loss for ${symbol} (Current ₹${price.toFixed(2)})`);
+  const sl = parseFloat(inp);
+  if(!isNaN(sl)){
+    portfolio[symbol].shortSL = sl;
+    alert(`Short SL set at ₹${sl}`);
+  }
+}
+
+/* ------------------ DASHBOARD ------------------ */
+function updateTradeTable(){
+  const tbody = document.getElementById("tradeRows");
+  tbody.innerHTML="";
+
+  stocks.forEach(symbol=>{
+    const p = portfolio[symbol];
+    const price = latestPrice(symbol);
+
+    const longVal = p.longQty * price;
+    const shortVal = (p.shortAvg - price) * p.shortQty;
+
+    const pl = (longVal - p.longQty*p.longAvg) + shortVal;
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${symbol}</td>
+      <td>${p.longQty - p.shortQty}</td>
+      <td>${p.longAvg.toFixed(2)}</td>
+      <td>${p.shortAvg.toFixed(2)}</td>
+      <td>₹${longVal.toFixed(2)}</td>
+      <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function updateMainDashboard(){
   let holdingsValue = 0;
-  let investedLong = 0;
+  let longInvested = 0;
   let shortGain = 0;
 
   stocks.forEach(symbol=>{
@@ -202,52 +269,23 @@ function updateDashboard(){
     const price = latestPrice(symbol);
 
     holdingsValue += p.longQty * price;
-    investedLong += p.longQty * p.longAvg;
-
-    // unrealized short profit = (avgShort - current) * qty
+    longInvested += p.longQty * p.longAvg;
     shortGain += (p.shortAvg - price) * p.shortQty;
   });
 
-  const pl = (holdingsValue - investedLong) + shortGain;
+  const pl = (holdingsValue - longInvested) + shortGain;
   const netValue = funds + holdingsValue + shortGain;
 
   document.getElementById("funds").textContent = funds.toFixed(2);
   document.getElementById("holdings").textContent = holdingsValue.toFixed(2);
   document.getElementById("netValue").textContent = netValue.toFixed(2);
-  document.getElementById("pl").textContent = pl.toFixed(2);
-  document.getElementById("pl").className = pl>=0 ? "green" : "red";
 
-  updateTradeTable();
+  const plElem = document.getElementById("pl");
+  plElem.textContent = pl.toFixed(2);
+  plElem.className = pl>=0 ? "green" : "red";
 }
 
-/* ------------------------- TRADE TABLE ---------------------------- */
-function updateTradeTable(){
-  const tbody = document.getElementById("tradeRows");
-  tbody.innerHTML = "";
-
-  stocks.forEach(symbol=>{
-    const p = portfolio[symbol];
-    const price = latestPrice(symbol);
-
-    const longValue = p.longQty * price;
-    const shortValue = (p.shortAvg - price) * p.shortQty;
-
-    const pl = (longValue - (p.longQty*p.longAvg)) + shortValue;
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${symbol}</td>
-      <td>${p.longQty - p.shortQty}</td>
-      <td>${p.longAvg.toFixed(2)}</td>
-      <td>${p.shortAvg.toFixed(2)}</td>
-      <td>₹${longValue.toFixed(2)}</td>
-      <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-/* ----------------------------  UPDATE LOOP -------------------------- */
+/* ------------------ UPDATER LOOP ------------------ */
 function update(){
   stocks.forEach(symbol=>{
     const arr = stockData[symbol];
@@ -256,11 +294,39 @@ function update(){
 
     const ctx = document.getElementById("chart-"+symbol).getContext("2d");
     drawChart(ctx, arr);
+
+    const currentPrice = latestPrice(symbol);
+    const p = portfolio[symbol];
+
+    /* ---- LONG STOP LOSS ---- */
+    if(p.longQty>0 && p.longSL!==null){
+      if(currentPrice <= p.longSL){
+        alert(`${symbol} LONG Stop-Loss hit at ₹${currentPrice.toFixed(2)}`);
+        funds += p.longQty * currentPrice;
+        p.longQty = 0;
+        p.longAvg = 0;
+        p.longSL = null;
+      }
+    }
+
+    /* ---- SHORT STOP LOSS ---- */
+    if(p.shortQty>0 && p.shortSL!==null){
+      if(currentPrice >= p.shortSL){
+        alert(`${symbol} SHORT Stop-Loss hit at ₹${currentPrice.toFixed(2)}`);
+        funds -= p.shortQty * currentPrice;
+        p.shortQty = 0;
+        p.shortAvg = 0;
+        p.shortSL = null;
+      }
+    }
   });
-  updateDashboard();
+
+  updateMainDashboard();
+  updateTradeTable();
 }
 
-setInterval(update,1000);
+setInterval(update, 1000);
 </script>
+
 </body>
 </html>
