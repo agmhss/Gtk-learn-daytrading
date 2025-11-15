@@ -1,202 +1,266 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Mock Day-Trading Simulator with RSI and Dashboard</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Day-Trading Simulator</title>
+
 <style>
-  body { font-family: Arial, sans-serif; background: #f2f4f7; margin: 0; padding: 20px; }
-  h1 { text-align: center; }
-  .dashboard { display: flex; justify-content: space-around; background: #fff; padding: 10px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 15px; }
-  .metric { text-align: center; font-weight: bold; }
-  .profit { color: #4caf50; }
-  .loss { color: #f44336; }
-  .stock-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; }
-  .stock-card { background: white; border-radius: 10px; padding: 15px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-  canvas { width: 100%; height: 120px; background: #fff; border-radius: 6px; }
-  .controls { display: flex; justify-content: space-between; margin-top: 10px; }
-  button { padding: 5px 10px; border: none; border-radius: 6px; cursor: pointer; }
-  .buy { background: #4caf50; color: white; }
-  .sell { background: #f44336; color: white; }
-  .hold { background: #999; color: white; }
-  .trend-box { overflow-x: auto; white-space: nowrap; background: #eef; border-radius: 8px; padding: 8px; margin-top: 10px; }
-  .rsi-bar { height: 8px; border-radius: 4px; margin-top: 6px; }
-  .rsi-text { font-size: 0.8em; text-align: center; margin-top: 2px; }
+body { font-family: Arial; background:#eef2f7; padding:20px; }
+h1 { text-align:center; }
+
+.dashboard {
+  display:flex; justify-content:space-around;
+  padding:15px; background:white;
+  border-radius:10px; margin-bottom:20px;
+  box-shadow:0 2px 5px rgba(0,0,0,0.1);
+}
+.metric { font-size:1.1em; font-weight:bold; }
+
+.stock-container {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:15px;
+}
+.stock-card {
+  background:white; padding:15px; border-radius:12px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.15);
+}
+canvas { width:100%; height:120px; }
+
+.controls button {
+  padding:6px 10px; margin:3px;
+  border:none; border-radius:6px;
+  cursor:pointer; color:white;
+}
+.buy { background:#4caf50; }
+.sell { background:#f44336; }
+.short { background:#3333cc; }
+.cover { background:#cc33aa; }
+.hold { background:#777; }
+
+#tradeTable {
+  background:white; margin-top:25px; width:100%; border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.15);
+  border-collapse:collapse;
+}
+#tradeTable th, #tradeTable td {
+  padding:10px; border-bottom:1px solid #ddd; text-align:center;
+}
+#tradeTable th { background:#3f51b5; color:white; }
+.green { color:#4caf50; font-weight:bold; }
+.red { color:#f44336; font-weight:bold; }
 </style>
 </head>
+
 <body>
-<h1>Mock Day-Trading Simulator 📊</h1>
+
+<h1>📊 Advanced Day-Trading Simulator</h1>
+
 <div class="dashboard">
   <div class="metric">💰 Funds: ₹<span id="funds">10000</span></div>
-  <div class="metric">📦 Holdings: ₹<span id="holdings">0</span></div>
+  <div class="metric">📦 Net Holdings: ₹<span id="holdings">0</span></div>
   <div class="metric">💹 Net Value: ₹<span id="netValue">10000</span></div>
-  <div class="metric">📊 P/L: <span id="pl" class="neutral">0</span></div>
-  <div class="metric">⛔ Stop-Loss Active: <span id="slCount">0</span></div>
+  <div class="metric">📊 P/L: <span id="pl">0</span></div>
 </div>
-<div class="stock-container" id="stocks"></div><script>
-const stocks = ['U','V','W','X','Y','Z'];
+
+<div class="stock-container" id="stocks"></div>
+
+<h2>📘 Trade Dashboard</h2>
+<table id="tradeTable">
+  <thead>
+    <tr>
+      <th>Stock</th>
+      <th>Qty</th>
+      <th>Avg Buy</th>
+      <th>Avg Short</th>
+      <th>Current Value</th>
+      <th>P/L</th>
+    </tr>
+  </thead>
+  <tbody id="tradeRows"></tbody>
+</table>
+
+<script>
+/* ----------------------------  STOCKS -------------------------- */
+const stocks = ['X','Y','Z'];
 let funds = 10000;
+
 const portfolio = {};
 const stockData = {};
 
 stocks.forEach(s => {
-  stockData[s] = Array.from({length: 60}, () => 100 + Math.random()*20);
-  portfolio[s] = { quantity: 0, avgPrice: 0, stopLoss: null };
+  stockData[s] = Array.from({length:60},()=>100+Math.random()*20);
+  portfolio[s] = {
+    longQty: 0,
+    longAvg: 0,
+    shortQty: 0,
+    shortAvg: 0
+  };
 });
 
-function getSMA(values, period) {
-  if (values.length < period) return null;
-  const subset = values.slice(-period);
-  return subset.reduce((a,b)=>a+b,0)/period;
-}
-
-function calculateRSI(values, period=14) {
-  if (values.length < period+1) return 50;
-  let gains=0, losses=0;
-  for (let i=values.length-period; i<values.length; i++) {
-    let diff = values[i] - values[i-1];
-    if (diff>0) gains+=diff; else losses-=diff;
-  }
-  if (losses===0) return 100;
-  const rs = gains/losses;
-  return 100 - (100 / (1 + rs));
-}
-
+/* ----------------------------  PRICE SIM -------------------------- */
 function simulatePrice(oldPrice) {
-  let change = (Math.random()-0.5)*2;
-  return Math.max(50, oldPrice + change);
+  return Math.max(50, oldPrice + (Math.random()-0.5)*2);
 }
 
-function drawChart(ctx, values) {
-  const width = ctx.canvas.width;
-  const height = ctx.canvas.height;
-  ctx.clearRect(0,0,width,height);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
+function drawChart(ctx, values){
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.clearRect(0,0,w,h);
+  const max=Math.max(...values), min=Math.min(...values);
   ctx.beginPath();
-  ctx.strokeStyle = '#2196f3';
+  ctx.strokeStyle="#2962ff";
   values.forEach((v,i)=>{
-    const x = (i/values.length)*width;
-    const y = height - ((v-min)/(max-min))*height;
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    const x=(i/values.length)*w;
+    const y=h - ((v-min)/(max-min))*h;
+    if(i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
   });
   ctx.stroke();
 }
 
-function updateDashboard() {
-  let holdingsValue = 0;
-  let stopCount = 0;
-  let invested = 0;
-  stocks.forEach(symbol => {
-    const price = stockData[symbol][stockData[symbol].length-1];
-    const { quantity, avgPrice, stopLoss } = portfolio[symbol];
-    if (quantity > 0) {
-      holdingsValue += quantity * price;
-      invested += quantity * avgPrice;
-    }
-    if (stopLoss) stopCount++;
-  });
-  const netValue = funds + holdingsValue;
-  const pl = holdingsValue - invested;
-
-  document.getElementById('funds').textContent = funds.toFixed(2);
-  document.getElementById('holdings').textContent = holdingsValue.toFixed(2);
-  document.getElementById('netValue').textContent = netValue.toFixed(2);
-
-  const plElem = document.getElementById('pl');
-  plElem.textContent = pl.toFixed(2);
-  plElem.className = pl > 0 ? 'profit' : pl < 0 ? 'loss' : 'neutral';
-  document.getElementById('slCount').textContent = stopCount;
-}
-
-function update() {
-  stocks.forEach(symbol => {
-    const data = stockData[symbol];
-    data.push(simulatePrice(data[data.length-1]));
-    if (data.length > 100) data.shift();
-
-    const sma5 = getSMA(data,5);
-    const sma20 = getSMA(data,20);
-    const rsi = calculateRSI(data);
-    let action = 'Hold';
-    if (sma5 && sma20) {
-      if (sma5 > sma20 && rsi < 70) action = 'Buy';
-      else if (sma5 < sma20 && rsi > 30) action = 'Sell';
-    }
-
-    const card = document.getElementById('card-'+symbol);
-    const ctx = document.getElementById('chart-'+symbol).getContext('2d');
-    drawChart(ctx, data);
-
-    const rsiBar = card.querySelector('.rsi-bar');
-    if (rsi > 70) rsiBar.style.background = '#f44336';
-    else if (rsi < 30) rsiBar.style.background = '#4caf50';
-    else rsiBar.style.background = '#999';
-    card.querySelector('.rsi-text').textContent = `RSI: ${rsi.toFixed(1)} (${rsi>70?'Overbought':rsi<30?'Oversold':'Neutral'})`;
-
-    const trend = card.querySelector('.trend');
-    trend.textContent += `${action} → `;
-
-    const stopLoss = portfolio[symbol].stopLoss;
-    const currentPrice = data[data.length-1];
-    if (stopLoss && currentPrice < stopLoss && portfolio[symbol].quantity>0) {
-      funds += portfolio[symbol].quantity * currentPrice;
-      portfolio[symbol].quantity = 0;
-      portfolio[symbol].stopLoss = null;
-      alert(symbol+' triggered Stop-Loss at ₹'+currentPrice.toFixed(2));
-    }
-  });
-  updateDashboard();
-}
-
+/* ----------------------------  RENDER -------------------------- */
 function render() {
-  const container = document.getElementById('stocks');
-  stocks.forEach(symbol => {
-    const div = document.createElement('div');
-    div.className = 'stock-card';
-    div.id = 'card-'+symbol;
-    div.innerHTML = `
+  const container = document.getElementById("stocks");
+  stocks.forEach(symbol=>{
+    const div=document.createElement("div");
+    div.className="stock-card";
+    div.id="card-"+symbol;
+    div.innerHTML=`
       <h3>Stock ${symbol}</h3>
       <canvas id="chart-${symbol}" width="260" height="120"></canvas>
       <div class="controls">
-        <button class="buy" onclick="buyStock('${symbol}')">Buy</button>
-        <button class="sell" onclick="sellStock('${symbol}')">Sell</button>
-        <button class="hold" onclick="setStopLoss('${symbol}')">Stop-Loss</button>
+        <button class="buy" onclick="buyLong('${symbol}')">Buy</button>
+        <button class="sell" onclick="sellLong('${symbol}')">Sell</button>
+        <button class="short" onclick="shortSell('${symbol}')">Short Sell</button>
+        <button class="cover" onclick="coverShort('${symbol}')">Cover</button>
       </div>
-      <div class="trend-box"><span class="trend"></span></div>
-      <div class="rsi-bar"></div>
-      <div class="rsi-text"></div>
     `;
     container.appendChild(div);
   });
 }
-
-function buyStock(symbol) {
-  const price = stockData[symbol][stockData[symbol].length-1];
-  if (funds >= price) {
-    funds -= price;
-    const p = portfolio[symbol];
-    p.avgPrice = ((p.avgPrice * p.quantity) + price) / (p.quantity + 1);
-    p.quantity += 1;
-  }
-}
-
-function sellStock(symbol) {
-  const price = stockData[symbol][stockData[symbol].length-1];
-  const p = portfolio[symbol];
-  if (p.quantity > 0) {
-    funds += p.quantity * price;
-    p.quantity = 0;
-    p.avgPrice = 0;
-  }
-}
-
-function setStopLoss(symbol) {
-  const price = stockData[symbol][stockData[symbol].length-1];
-  const stop = parseFloat(prompt('Set Stop-Loss for '+symbol+' (current ₹'+price.toFixed(2)+')'));
-  if (!isNaN(stop)) portfolio[symbol].stopLoss = stop;
-}
-
 render();
-setInterval(update, 1000);
-</script></body>
+
+/* ----------------------------  TRADING LOGIC -------------------------- */
+function buyLong(symbol){
+  const price = latestPrice(symbol);
+  if(funds >= price){
+    let p = portfolio[symbol];
+    p.longAvg = (p.longAvg*p.longQty + price) / (p.longQty+1);
+    p.longQty++;
+    funds -= price;
+  }
+}
+
+function sellLong(symbol){
+  let p = portfolio[symbol];
+  if(p.longQty > 0){
+    const price = latestPrice(symbol);
+    funds += price * p.longQty;
+    p.longQty = 0;
+    p.longAvg = 0;
+  }
+}
+
+/* SHORT SELL */
+function shortSell(symbol){
+  const price = latestPrice(symbol);
+  // Short 1 share
+  let p = portfolio[symbol];
+  p.shortAvg = (p.shortAvg*p.shortQty + price) / (p.shortQty+1);
+  p.shortQty++;
+  // Selling without owning → receive cash
+  funds += price;
+}
+
+/* BUY TO COVER */
+function coverShort(symbol){
+  let p = portfolio[symbol];
+  if(p.shortQty > 0){
+    const price = latestPrice(symbol);
+    // Need to pay to return borrowed shares
+    funds -= price * p.shortQty;
+    p.shortQty = 0;
+    p.shortAvg = 0;
+  }
+}
+
+/* ----------------------------  CALCULATIONS -------------------------- */
+function latestPrice(symbol){
+  const arr = stockData[symbol];
+  return arr[arr.length-1];
+}
+
+function updateDashboard(){
+  let holdingsValue = 0;
+  let investedLong = 0;
+  let shortGain = 0;
+
+  stocks.forEach(symbol=>{
+    const p = portfolio[symbol];
+    const price = latestPrice(symbol);
+
+    holdingsValue += p.longQty * price;
+    investedLong += p.longQty * p.longAvg;
+
+    // unrealized short profit = (avgShort - current) * qty
+    shortGain += (p.shortAvg - price) * p.shortQty;
+  });
+
+  const pl = (holdingsValue - investedLong) + shortGain;
+  const netValue = funds + holdingsValue + shortGain;
+
+  document.getElementById("funds").textContent = funds.toFixed(2);
+  document.getElementById("holdings").textContent = holdingsValue.toFixed(2);
+  document.getElementById("netValue").textContent = netValue.toFixed(2);
+  document.getElementById("pl").textContent = pl.toFixed(2);
+  document.getElementById("pl").className = pl>=0 ? "green" : "red";
+
+  updateTradeTable();
+}
+
+/* ------------------------- TRADE TABLE ---------------------------- */
+function updateTradeTable(){
+  const tbody = document.getElementById("tradeRows");
+  tbody.innerHTML = "";
+
+  stocks.forEach(symbol=>{
+    const p = portfolio[symbol];
+    const price = latestPrice(symbol);
+
+    const longValue = p.longQty * price;
+    const shortValue = (p.shortAvg - price) * p.shortQty;
+
+    const pl = (longValue - (p.longQty*p.longAvg)) + shortValue;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${symbol}</td>
+      <td>${p.longQty - p.shortQty}</td>
+      <td>${p.longAvg.toFixed(2)}</td>
+      <td>${p.shortAvg.toFixed(2)}</td>
+      <td>₹${longValue.toFixed(2)}</td>
+      <td class="${pl>=0?'green':'red'}">${pl.toFixed(2)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ----------------------------  UPDATE LOOP -------------------------- */
+function update(){
+  stocks.forEach(symbol=>{
+    const arr = stockData[symbol];
+    arr.push(simulatePrice(arr[arr.length-1]));
+    if(arr.length>120) arr.shift();
+
+    const ctx = document.getElementById("chart-"+symbol).getContext("2d");
+    drawChart(ctx, arr);
+  });
+  updateDashboard();
+}
+
+setInterval(update,1000);
+</script>
+</body>
 </html>
